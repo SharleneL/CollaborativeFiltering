@@ -1,5 +1,5 @@
 # RUNNING COMMAND:
-# python ColFiltering.py [exp1/exp2/exp3/exp4] [cosine/dot] [mean/weight]
+# python ColFiltering.py [uu/mm/pcc/mf] [cosine/dot] [mean/weight]
 
 __author__ = 'luoshalin'
 
@@ -20,7 +20,7 @@ from scipy import *
 
 def main(argv):
     # PARAMETERS
-    exp_arg = sys.argv[1]
+    model_arg = sys.argv[1]
     sim_arg = sys.argv[2]
     weight_arg = sys.argv[3]
     dev_filepath = '../../data/HW4_data/dev.csv'
@@ -46,19 +46,23 @@ def main(argv):
     qmM = get_qmM(dev_filepath)
 
 
-    # ==========/ EXP 1 /========== #
-    qid_set = set(find(qmM)[0])  # row - queries
-    qid_list = list(qid_set)
-    # run user-user similarity algo
-    uu_pred_dic = get_user_user_pred(qid_list, trainM, k, sim_arg, weight_arg)
-    # write to result
-    # output(uuM, dev_filepath, output_filepath)
+    # ==========/ EXP 1(uu) /========== #
+    if model_arg == 'uu':
+        qid_set = set(find(qmM)[0])  # row - queries
+        qid_list = list(qid_set)
+        # run user-user similarity algo
+        uu_pred_dic = get_user_user_pred(qid_list, trainM, k, sim_arg, weight_arg)
+        # write to result
+        # output(uuM, dev_filepath, output_filepath)
 
-    # ==========/ EXP 2 /========== #
-    # mid_set = set(find(qmM)[1])  # col - movies
-    # mid_list = list(mid_set)
-    # run movie-movie similarity algo
-    # get_movie_movie_pred(qmM, trainM, k, sim_arg, weight_arg)
+    # ==========/ EXP 2(mm) /========== #
+    if model_arg == 'mm':
+        # run movie-movie similarity algo
+        get_movie_movie_pred(qmM, trainM, k, sim_arg, weight_arg, model_arg)
+
+    # ==========/ EXP 3(pcc) /========== #
+    if model_arg == 'pcc':
+        get_movie_movie_pred(qmM, trainM, k, sim_arg, weight_arg, model_arg)
 
 
 def get_trainM(filepath):
@@ -192,8 +196,8 @@ def get_uu_simM(qid_list, trainM, sim_arg):
 
 # for exp2
 # qmM - matrix to be predicted; trainM - original predicted matrix
-def get_movie_movie_pred(qmM, trainM, k, sim_arg, weight_arg):
-    simM = get_mm_simM(trainM, sim_arg)     # the movie-movie similarity matrix
+def get_movie_movie_pred(qmM, trainM, k, sim_arg, weight_arg, model_arg):
+    simM = get_mm_simM(trainM, sim_arg, model_arg)     # the movie-movie similarity matrix
     user_list = find(qmM)[0].tolist()       # the users to be predicted
     movie_list = find(qmM)[1].tolist()      # the movies to be predicted
     movie_set = set(movie_list)  # a set of mid
@@ -240,28 +244,22 @@ def get_movie_movie_pred(qmM, trainM, k, sim_arg, weight_arg):
     # for (uid, mid) in zip(user_list, movie_list):
 
 
-
-
-def get_mm_simM(trainM, sim_arg):
-    if sim_arg == 'dot':
-        return dot(trainM.T, trainM)
-    if sim_arg == 'cosine':
-        # normalize trainM
-        trainM_norm_list = np.linalg.norm(trainM.toarray(), axis=1)  # the normalization factor for each row
-        for i in range(len(trainM_norm_list)):
-            if trainM_norm_list[i] == 0:
-                trainM_norm_list[i] = 1
-        trainM_norm = (trainM.T / trainM_norm_list).T  # the normalized trainM
-        return dot(trainM_norm.T, trainM_norm)
-
-
-
-
-
-
-
-
-
+def get_mm_simM(trainM, sim_arg, model_arg):
+    if model_arg == 'pcc':
+        std_list = trainM.toarray().std(0)  # the std for each col(movie)
+        std_M = np.matrix([std_list])
+        return dot(std_M.T, std_M)
+    else:
+        if sim_arg == 'dot':
+            return dot(trainM.T, trainM)
+        if sim_arg == 'cosine':
+            # normalize trainM
+            trainM_norm_list = np.linalg.norm(trainM.toarray(), axis=1)  # the normalization factor for each row
+            for i in range(len(trainM_norm_list)):
+                if trainM_norm_list[i] == 0:
+                    trainM_norm_list[i] = 1
+            trainM_norm = (trainM.T / trainM_norm_list).T  # the normalized trainM
+            return dot(trainM_norm.T, trainM_norm)
 
 
 # input file : dev file
