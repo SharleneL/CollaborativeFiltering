@@ -47,18 +47,18 @@ def main(argv):
 
 
     # ==========/ EXP 1 /========== #
-    # qid_set = set(find(qmM)[0])  # row - queries
-    # qid_list = list(qid_set)
+    qid_set = set(find(qmM)[0])  # row - queries
+    qid_list = list(qid_set)
     # run user-user similarity algo
-    # uu_pred_dic = get_user_user_pred(qid_list, trainM, k, sim_arg, weight_arg)
+    uu_pred_dic = get_user_user_pred(qid_list, trainM, k, sim_arg, weight_arg)
     # write to result
     # output(uuM, dev_filepath, output_filepath)
 
     # ==========/ EXP 2 /========== #
-    mid_set = set(find(qmM)[1])  # col - movies
-    mid_list = list(mid_set)
+    # mid_set = set(find(qmM)[1])  # col - movies
+    # mid_list = list(mid_set)
     # run movie-movie similarity algo
-    get_movie_movie_pred(qmM, trainM, k, sim_arg, weight_arg)
+    # get_movie_movie_pred(qmM, trainM, k, sim_arg, weight_arg)
 
 
 def get_trainM(filepath):
@@ -158,16 +158,19 @@ def get_user_user_pred(qid_list, trainM, k, sim_arg, weight_arg):
             # print predict_query_res
 
         if weight_arg == 'weight':  # weighted sum
-            res_list = [0] * len(knn_M[0])
+            knn_arr_M = knn_M.toarray()
+            res_list = [0] * len(knn_arr_M[0])
             # normalize
-            w_list = sim_list / sum(sim_list)
-            for j in range(0, len(w_list)):
-                tmp_res_list = knn_M[j] * w_list[j]
-                predict_query_res_list = [round(x+y+3) for x, y in zip(res_list, tmp_res_list)]
-        # reverse imputation
-        # predict_query_res_list = [round(x)+3 for x in predict_query_res]
+            sim_sum = sum(sim_list)
+            w_list = sim_list
+            if sim_sum != 0:
+                w_list /= sim_sum
+            w_arr = np.asarray(w_list)
+            predict_query_res_list = dot(w_arr, knn_arr_M) + 3
+            predict_query_res_list = [round(x) for x in predict_query_res_list]
         query_predict_res_dic[qid_list[i]] = predict_query_res_list
     print 'EXP1 END'
+    print query_predict_res_dic
     return query_predict_res_dic
 
 
@@ -233,12 +236,7 @@ def get_movie_movie_pred(qmM, trainM, k, sim_arg, weight_arg):
         movie_predict_res_dic[mid] = predict_movie_res_list
     print 'EXP2 END'
     return movie_predict_res_dic
-
-
-
-
-
-
+    # output result
     # for (uid, mid) in zip(user_list, movie_list):
 
 
