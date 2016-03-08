@@ -1,49 +1,45 @@
 # RUNNING COMMAND:
-# python ColFiltering.py [uu/mm/pcc/mf] [cosine/dot] [mean/weight]
+# python ColFiltering.py [uu/mm/pcc/mf] [cosine/dot] [mean/weight] [k] [output_filepath]
 
 __author__ = 'luoshalin'
 
 from scipy import sparse
 import os
 import sys
-import time
 import numpy as np
 from sklearn.metrics import pairwise_distances
 from scipy.spatial.distance import cosine
 from scipy import spatial
 import heapq
-from numpy import linalg as LA
+from numpy import linalg as LAn
+import time
 
 from scipy.sparse import *
 from scipy import *
 
 
 def main(argv):
+    # TIMER
+    t0 = time.time()
+
     # PARAMETERS
     model_arg = sys.argv[1]
     sim_arg = sys.argv[2]
     weight_arg = sys.argv[3]
-    dev_filepath = '../../data/HW4_data/dev.csv'
+    k = int(sys.argv[4])
+    dev_filepath = '../../data/HW4_data/test.csv'
     test_filepath = '../../data/HW4_data/test.csv'
     train_filepath = '../../data/HW4_data/train.csv'
     dev_query_filepath = '../../data/HW4_data/dev.queries'
     test_query_filepath = '../../data/HW4_data/test.queries'
-    output_filepath = 'output'
-    k = 10  # default
+    output_filepath = sys.argv[5]
 
-    # TEST -- START
-    train_filepath = '../../data/HW4_data/train.csv'
-    dev_query_filepath = '../../data/HW4_data/dev_s.queries'
-    # TEST -- END
-
-    # READ DATA
+    # DATA PREPROCESSING
     # read train data -> preprocessing into vectors -> imputation
     trainM = get_trainM(train_filepath)  # get a sparse M as training set, <user, movie>[score]
-    # print trainM[19].toarray()[0][1]
-    # CORRECT
-
     # save target <query, movie> pairs to be predicted into a matrix
-    qmM = get_qmM(dev_filepath)
+    mu_list = []
+    qmM = get_qmM(dev_filepath, mu_list)
 
 
     # ==========/ EXP 1(uu) /========== #
@@ -53,16 +49,19 @@ def main(argv):
         # run user-user similarity algo
         uu_pred_dic = get_user_user_pred(qid_list, trainM, k, sim_arg, weight_arg)
         # write to result
-        # output(uuM, dev_filepath, output_filepath)
+        uu_output(uu_pred_dic, mu_list, dev_filepath, output_filepath)
 
     # ==========/ EXP 2(mm) /========== #
     if model_arg == 'mm':
         # run movie-movie similarity algo
-        get_movie_movie_pred(qmM, trainM, k, sim_arg, weight_arg, model_arg)
+        mm_pred_dic = get_movie_movie_pred(qmM, trainM, k, sim_arg, weight_arg, model_arg)
+        mm_output(mm_pred_dic, mu_list, dev_filepath, output_filepath)
 
     # ==========/ EXP 3(pcc) /========== #
     if model_arg == 'pcc':
-        get_movie_movie_pred(qmM, trainM, k, sim_arg, weight_arg, model_arg)
+        mm_pred_dic = get_movie_movie_pred(qmM, trainM, k, sim_arg, weight_arg, model_arg)
+        mm_output(mm_pred_dic, mu_list, dev_filepath, output_filepath)
+    print time.time() - t0, "seconds wall time"
 
 
 def get_trainM(filepath):
@@ -93,7 +92,7 @@ def get_trainM(filepath):
     return trainM
 
 
-def get_qmM(filepath):
+def get_qmM(filepath, mu_list):
     user = []   # as row
     movie = []  # as col
     score = []  # as data
@@ -110,6 +109,7 @@ def get_qmM(filepath):
             movie.append(movie_num)
             user.append(user_num)
             score.append(1)  # if value = 1, means this is a pos to be predicted
+            mu_list.append((movie_num, user_num))
 
             user_size = max(user_size, user_num)
             movie_size = max(movie_size, movie_num)
@@ -119,15 +119,14 @@ def get_qmM(filepath):
     return qmM
 
 
-# for exp1
 def get_user_user_pred(qid_list, trainM, k, sim_arg, weight_arg):
     # calculate similarities - each row is the similarities for one target query, with all the other q's similarities(normalized)
     simM = get_uu_simM(qid_list, trainM, sim_arg)
 
-    # set the sim of the same query to -inf
+    # set the sim of the same query to -1
     for i in range(len(qid_list)):
         qid = qid_list[i]
-        simM[i, qid] = -inf
+        simM[i, qid] = -1
 
     # get prediction result
     query_predict_res_dic = dict()
@@ -138,28 +137,16 @@ def get_user_user_pred(qid_list, trainM, k, sim_arg, weight_arg):
         sim_arr = np.array(simM[i])  # target query array
         temp = np.argpartition(-sim_arr, k)
         sim_id_list = temp[:k]
-        # sim_id_list = [x+1 for x in sim_id_list]
-        # print sim_id_list
         knn_qid_list = sim_id_list[0][:k]  # k-nearest qids for current query(row in simM)
 
         # construct KNN matrix
-        # knn_M = trainM[knn_qid_list, :]
         knn_M = trainM.tocsr()[knn_qid_list,:]
         sim_list = [simM[i, qid] for qid in knn_qid_list]
-        # knn_M = []  # a list of numpy arrays
-        # sim_list = []  # a list of similarity of the corresponding numpy array element
-        # for qid in knn_qid_list:
-        #     # print id
-        #     # print trainM.toarray(id)[0]
-        #     knn_M.append(trainM.toarray(qid)[0])
-        #     sim_list.append(simM[i, qid])
 
         if weight_arg == 'mean':  # mean
             predict_query_res = knn_M.mean(0) + 3  # a full list with converted imputation
             predict_query_res_list = list(np.array(predict_query_res[0, :]).reshape(-1,))
             predict_query_res_list = [round(x) for x in predict_query_res_list]
-            # print knn_M
-            # print predict_query_res
 
         if weight_arg == 'weight':  # weighted sum
             knn_arr_M = knn_M.toarray()
@@ -174,14 +161,16 @@ def get_user_user_pred(qid_list, trainM, k, sim_arg, weight_arg):
             predict_query_res_list = [round(x) for x in predict_query_res_list]
         query_predict_res_dic[qid_list[i]] = predict_query_res_list
     print 'EXP1 END'
-    print query_predict_res_dic
     return query_predict_res_dic
 
 
 def get_uu_simM(qid_list, trainM, sim_arg):
     if sim_arg == 'dot':
+        trainM_norm_arr = np.asarray([1] * trainM.shape[0])
+        trainM = (trainM.T / trainM_norm_arr).T
         queryM = trainM[qid_list, :]
-        return dot(queryM, trainM.T)
+        return queryM * trainM.T
+
     if sim_arg == 'cosine':
         # normalize trainM
         trainM_norm_list = np.linalg.norm(trainM.toarray(), axis=1)  # the normalization factor for each row
@@ -194,7 +183,6 @@ def get_uu_simM(qid_list, trainM, sim_arg):
         queryM_norm = trainM_norm[qid_list, :]
         return dot(queryM_norm, trainM_norm.T)
 
-# for exp2
 # qmM - matrix to be predicted; trainM - original predicted matrix
 def get_movie_movie_pred(qmM, trainM, k, sim_arg, weight_arg, model_arg):
     simM = get_mm_simM(trainM, sim_arg, model_arg)     # the movie-movie similarity matrix
@@ -213,8 +201,7 @@ def get_movie_movie_pred(qmM, trainM, k, sim_arg, weight_arg, model_arg):
         knn_mid_list = sim_id_list[0][:k]  # k-nearest mids for current movie(row in simM)
 
         # construct KNN matrix
-        # knn_M = trainM[knn_qid_list, :]
-        knn_M = trainM.tocsr()[knn_mid_list,:]
+        knn_M = trainM.tocsr().T[knn_mid_list,:]
         sim_list = [simM[mid, knn_mid] for knn_mid in knn_mid_list]
 
         if weight_arg == 'mean':  # mean
@@ -234,14 +221,9 @@ def get_movie_movie_pred(qmM, trainM, k, sim_arg, weight_arg, model_arg):
             w_arr = np.asarray(w_list)
             predict_movie_res_list = dot(w_arr, knn_arr_M) + 3
             predict_movie_res_list = [round(x) for x in predict_movie_res_list]
-            # for i in range(0, len(w_list)):
-            #     tmp_res_list = knn_arr_M[i] * w_list[i]
-            #     predict_movie_res_list = [round(x+y+3) for x, y in zip(res_list, tmp_res_list)]
         movie_predict_res_dic[mid] = predict_movie_res_list
     print 'EXP2 END'
     return movie_predict_res_dic
-    # output result
-    # for (uid, mid) in zip(user_list, movie_list):
 
 
 def get_mm_simM(trainM, sim_arg, model_arg):
@@ -251,7 +233,10 @@ def get_mm_simM(trainM, sim_arg, model_arg):
         return dot(std_M.T, std_M)
     else:
         if sim_arg == 'dot':
-            return dot(trainM.T, trainM)
+            trainM_norm_arr = np.asarray([1] * trainM.shape[0])
+            trainM_norm = (trainM.T / trainM_norm_arr).T
+            return dot(trainM_norm.T, trainM_norm)
+
         if sim_arg == 'cosine':
             # normalize trainM
             trainM_norm_list = np.linalg.norm(trainM.toarray(), axis=1)  # the normalization factor for each row
@@ -262,17 +247,22 @@ def get_mm_simM(trainM, sim_arg, model_arg):
             return dot(trainM_norm.T, trainM_norm)
 
 
-# input file : dev file
-def output(uu_dic, input_filepath, output_filepath):
+def uu_output(uu_pred_dic, mu_list, input_filepath, output_filepath):
     with open(output_filepath, 'a') as f_output:
-        with open(input_filepath) as f:
-            line = f.readline().strip()
-            while line != '':
-                qid = int(line.split(',')[0])
-                mid = int(line.split(',')[1])
-                res = uu_dic[qid][mid]
-                new_line = str(qid) + ',' + str(mid) + ',' + str(res) + '\n'
-                f_output.write(new_line)
+        for mu_tuple in mu_list:
+            mid = mu_tuple[0]
+            uid = mu_tuple[1]
+            res = uu_pred_dic[uid][mid]
+            f_output.write(str(res)[0] + '\n')
+
+
+def mm_output(mm_pred_dic, mu_list, dev_filepath, output_filepath):
+    with open(output_filepath, 'a') as f_output:
+        for mu_tuple in mu_list:
+            mid = mu_tuple[0]
+            uid = mu_tuple[1]
+            res = mm_pred_dic[mid][uid]
+            f_output.write(str(res)[0] + '\n')
 
 
 if __name__ == '__main__':
